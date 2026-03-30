@@ -1,0 +1,9 @@
+{
+  "greeting": "Hello",
+  "farewell": "Goodbye",
+  "results": "No results | {count} result | {count} results",
+  "nested": {
+    "save": "Save",
+    "cancel": "Cancel"
+  }
+}
