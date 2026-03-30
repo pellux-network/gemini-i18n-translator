@@ -1,12 +1,16 @@
 import React, { useState } from "react";
 import { Box, useApp } from "ink";
+import { readFile } from "fs/promises";
+import { join, resolve } from "path";
 import { ConfigCheck } from "./steps/ConfigCheck.js";
 import { InputStep } from "./steps/InputStep.js";
 import { OutputStep } from "./steps/OutputStep.js";
 import { LangStep } from "./steps/LangStep.js";
 import { ConfirmStep } from "./steps/ConfirmStep.js";
+import { StaleStep, type StaleKeyInfo } from "./steps/StaleStep.js";
 import { TranslationView, type Job, type TranslationResult } from "./views/TranslationView.js";
 import { DoneView } from "./views/DoneView.js";
+import { findStaleKeys } from "../lib/diff.js";
 import logger from "../lib/logger.js";
 
 export type AppStep =
@@ -15,6 +19,7 @@ export type AppStep =
   | "output"
   | "lang"
   | "confirm"
+  | "stale"
   | "translating"
   | "done";
 
@@ -38,6 +43,7 @@ export function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   // Increment to force remount of TranslationView on retry
   const [runKey, setRunKey] = useState(0);
+  const [staleKeys, setStaleKeys] = useState<StaleKeyInfo[]>([]);
   const [state, setState] = useState<AppState>({
     apiKey: process.env.GEMINI_API_KEY ?? "",
     model: process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest",
@@ -59,6 +65,35 @@ export function App() {
       }
     }
     return list;
+  };
+
+  const scanForStaleKeys = async (
+    files: string[],
+    languages: string[],
+    inputDir: string,
+    outputDir: string
+  ): Promise<StaleKeyInfo[]> => {
+    const staleList: StaleKeyInfo[] = [];
+    for (const file of files) {
+      const sourcePath = join(resolve(inputDir), file);
+      const sourceRaw = await readFile(sourcePath, "utf-8");
+      const source = JSON.parse(sourceRaw);
+
+      for (const lang of languages) {
+        const existingPath = join(resolve(outputDir), lang, file);
+        try {
+          const existingRaw = await readFile(existingPath, "utf-8");
+          const existing = JSON.parse(existingRaw);
+          const stale = findStaleKeys(source, existing);
+          if (stale.size > 0) {
+            staleList.push({ file, lang, keys: [...stale] });
+          }
+        } catch {
+          // File doesn't exist — no stale keys
+        }
+      }
+    }
+    return staleList;
   };
 
   return (
@@ -105,10 +140,37 @@ export function App() {
           languages={state.languages}
           files={state.files}
           model={state.model}
-          onConfirm={() => {
+          onConfirm={async () => {
             const newJobs = buildJobs(state.files, state.languages);
-            logger.info({ totalJobs: newJobs.length }, "Translation confirmed, starting");
+            logger.info({ totalJobs: newJobs.length }, "Translation confirmed");
             setJobs(newJobs);
+
+            const stale = await scanForStaleKeys(
+              state.files,
+              state.languages,
+              state.inputDir,
+              state.outputDir
+            );
+
+            if (stale.length > 0) {
+              setStaleKeys(stale);
+              setStep("stale");
+            } else {
+              logger.info("No stale keys found, starting translation");
+              setStep("translating");
+            }
+          }}
+          onBack={() => setStep("lang")}
+        />
+      )}
+      {step === "stale" && (
+        <StaleStep
+          staleKeys={staleKeys}
+          onConfirm={() => {
+            logger.info(
+              { staleKeyCount: staleKeys.reduce((s, k) => s + k.keys.length, 0) },
+              "User confirmed dropping stale keys, starting translation"
+            );
             setStep("translating");
           }}
           onBack={() => setStep("lang")}
