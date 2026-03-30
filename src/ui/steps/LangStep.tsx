@@ -1,14 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { TextInput, StatusMessage } from "@inkjs/ui";
-
-const KNOWN_LANGUAGE_CODES = new Set([
-  "af", "ar", "bg", "bn", "ca", "cs", "da", "de", "el", "es", "et", "fa",
-  "fi", "fr", "gu", "he", "hi", "hr", "hu", "id", "it", "ja", "ka", "kn",
-  "ko", "lt", "lv", "ml", "mr", "ms", "nb", "nl", "pl", "pt", "pt-BR",
-  "ro", "ru", "sk", "sl", "sr", "sv", "ta", "te", "th", "tr", "uk", "ur",
-  "vi", "zh", "zh-TW",
-]);
+import { isValidBCP47, normalizeBCP47 } from "../lib/language";
 
 interface LangStepProps {
   onNext: (languages: string[]) => void;
@@ -16,7 +9,6 @@ interface LangStepProps {
 
 export function LangStep({ onNext }: LangStepProps) {
   const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
 
   const handleSubmit = (value: string) => {
     const languages = value
@@ -29,14 +21,14 @@ export function LangStep({ onNext }: LangStepProps) {
       return;
     }
 
-    const unknown = languages.filter((l) => !KNOWN_LANGUAGE_CODES.has(l));
-    if (unknown.length > 0 && !warning) {
-      setWarning(`Unrecognized language code(s): ${unknown.join(", ")}. Press Enter again to continue anyway.`);
-      setError(null);
+    const invalid = languages.filter((l) => !isValidBCP47(l));
+    if (invalid.length > 0) {
+      setError(`Invalid BCP 47 language code(s): ${invalid.join(", ")}`);
       return;
     }
 
-    onNext(languages);
+    const normalized = languages.map((l) => normalizeBCP47(l)!);
+    onNext(normalized);
   };
 
   return (
@@ -54,11 +46,6 @@ export function LangStep({ onNext }: LangStepProps) {
       {error && (
         <Box paddingLeft={2}>
           <StatusMessage variant="error">{error}</StatusMessage>
-        </Box>
-      )}
-      {warning && (
-        <Box paddingLeft={2}>
-          <StatusMessage variant="warning">{warning}</StatusMessage>
         </Box>
       )}
     </Box>

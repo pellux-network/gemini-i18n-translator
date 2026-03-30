@@ -1,20 +1,4 @@
-const LANGUAGE_NAMES: Record<string, string> = {
-  af: "Afrikaans", ar: "Arabic", bg: "Bulgarian", bn: "Bengali", ca: "Catalan",
-  cs: "Czech", da: "Danish", de: "German", el: "Greek", es: "Spanish",
-  et: "Estonian", fa: "Persian", fi: "Finnish", fr: "French", gu: "Gujarati",
-  he: "Hebrew", hi: "Hindi", hr: "Croatian", hu: "Hungarian", id: "Indonesian",
-  it: "Italian", ja: "Japanese", ka: "Georgian", kn: "Kannada", ko: "Korean",
-  lt: "Lithuanian", lv: "Latvian", ml: "Malayalam", mr: "Marathi", ms: "Malay",
-  nb: "Norwegian Bokmål", nl: "Dutch", pl: "Polish", pt: "Portuguese",
-  "pt-BR": "Brazilian Portuguese", ro: "Romanian", ru: "Russian", sk: "Slovak",
-  sl: "Slovenian", sr: "Serbian", sv: "Swedish", ta: "Tamil", te: "Telugu",
-  th: "Thai", tr: "Turkish", uk: "Ukrainian", ur: "Urdu", vi: "Vietnamese",
-  zh: "Chinese (Simplified)", "zh-TW": "Chinese (Traditional)",
-};
-
-function getLanguageName(code: string): string {
-  return LANGUAGE_NAMES[code] ?? code;
-}
+import { getLanguageName } from "./language";
 
 export function buildSystemPrompt(targetLang: string): string {
   const langName = getLanguageName(targetLang);

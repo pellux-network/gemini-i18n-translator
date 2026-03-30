@@ -111,7 +111,7 @@ export function App() {
             setJobs(newJobs);
             setStep("translating");
           }}
-          onCancel={() => exit()}
+          onBack={() => setStep("input")}
         />
       )}
       {step === "translating" && (
