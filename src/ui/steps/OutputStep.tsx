@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text } from "ink";
+import { resolve } from "path";
 import { PathInput } from "../components/PathInput.js";
 
 interface OutputStepProps {
@@ -12,7 +13,7 @@ export function OutputStep({ onNext }: OutputStepProps) {
   const handleSubmit = (submitted: string) => {
     const trimmed = submitted.trim();
     if (!trimmed) return;
-    onNext(trimmed);
+    onNext(resolve(trimmed));
   };
 
   return (

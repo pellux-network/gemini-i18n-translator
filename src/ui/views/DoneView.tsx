@@ -21,7 +21,7 @@ export function DoneView({ completed, failed, failedJobs, onRetry }: DoneViewPro
       const timer = setTimeout(() => exit(), 1000);
       return () => clearTimeout(timer);
     }
-  }, [allPassed]);
+  }, [allPassed, exit]);
 
   return (
     <Box flexDirection="column">

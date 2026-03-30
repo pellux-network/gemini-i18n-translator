@@ -34,7 +34,7 @@ export function ConfigCheck({ apiKey, model, onNext, onError }: ConfigCheckProps
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [apiKey, model, onNext, onError]);
 
   return (
     <Box flexDirection="column">

@@ -3,7 +3,8 @@ import { buildSystemPrompt, buildUserPrompt, buildRetryPrompt } from "./prompt";
 import { parseAndValidate } from "./validate";
 import logger from "./logger.js";
 
-type JsonObject = { [key: string]: unknown };
+type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
+type JsonObject = { [key: string]: JsonValue };
 
 const MAX_RETRIES = 1;
 
@@ -47,7 +48,7 @@ export async function translateJson(
     }
   }
 
-  throw lastError;
+  throw lastError ?? new Error("Translation failed");
 }
 
 export async function translateJsonStream(
@@ -99,5 +100,5 @@ export async function translateJsonStream(
     }
   }
 
-  throw lastError;
+  throw lastError ?? new Error("Streaming translation failed");
 }

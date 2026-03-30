@@ -1,8 +1,9 @@
 import pino from "pino";
 import { mkdirSync, readdirSync, unlinkSync } from "fs";
-import { join, resolve } from "path";
+import { join } from "path";
+import { homedir } from "os";
 
-const LOG_DIR = resolve("logs");
+const LOG_DIR = join(homedir(), ".local", "share", "gemini-i18n-translator", "logs");
 const MAX_LOG_FILES = 10;
 
 // Ensure log directory exists

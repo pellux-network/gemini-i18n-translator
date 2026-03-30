@@ -54,6 +54,6 @@ describe("translateJson", () => {
       generateContent: mockGenerateContent,
     };
 
-    expect(translateJson(mockModel as any, source, "fr")).rejects.toThrow();
+    await expect(translateJson(mockModel as any, source, "fr")).rejects.toThrow();
   });
 });

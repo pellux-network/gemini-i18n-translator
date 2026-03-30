@@ -110,6 +110,7 @@ export function TranslationView({
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [streamText, setStreamText] = useState("");
   const [currentLabel, setCurrentLabel] = useState("");
+  const [activeStreamJob, setActiveStreamJob] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
 
   const totalJobs = jobs.length;
@@ -140,10 +141,19 @@ export function TranslationView({
       const { file, lang } = job;
       const label = `${file} → ${lang}`;
 
+      const jobKey = `${file}-${lang}`;
       updateJob(file, lang, { status: "running" });
-      setCurrentLabel(label);
-      setStreamText("");
       logger.info({ file, lang }, `Starting translation: ${label}`);
+
+      // Only the first running job owns the stream display
+      setActiveStreamJob((current) => {
+        if (current === null) {
+          setCurrentLabel(label);
+          setStreamText("");
+          return jobKey;
+        }
+        return current;
+      });
 
       try {
         const sourcePath = join(resolve(inputDir), file);
@@ -155,7 +165,12 @@ export function TranslationView({
           source,
           lang,
           (chunk: string) => {
-            setStreamText((prev) => prev + chunk);
+            setActiveStreamJob((current) => {
+              if (current === jobKey) {
+                setStreamText((prev) => prev + chunk);
+              }
+              return current;
+            });
           }
         );
 
@@ -173,6 +188,16 @@ export function TranslationView({
         const msg = err instanceof Error ? err.message : String(err);
         updateJob(file, lang, { status: "failed", error: msg });
         logger.error({ file, lang, error: msg }, `Failed: ${label}`);
+      } finally {
+        // Release stream display so next job can claim it
+        setActiveStreamJob((current) => {
+          if (current === jobKey) {
+            setCurrentLabel("");
+            setStreamText("");
+            return null;
+          }
+          return current;
+        });
       }
     }
 

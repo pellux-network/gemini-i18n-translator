@@ -85,7 +85,7 @@ describe("translateJsonStream", () => {
       generateContentStream: mockGenerateContentStream,
     };
 
-    expect(
+    await expect(
       translateJsonStream(mockModel as any, source, "fr", () => {})
     ).rejects.toThrow();
   });
