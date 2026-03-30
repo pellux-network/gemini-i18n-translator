@@ -1,14 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { TextInput, StatusMessage } from "@inkjs/ui";
-
-const KNOWN_LANGUAGE_CODES = new Set([
-  "af", "ar", "bg", "bn", "ca", "cs", "da", "de", "el", "es", "et", "fa",
-  "fi", "fr", "gu", "he", "hi", "hr", "hu", "id", "it", "ja", "ka", "kn",
-  "ko", "lt", "lv", "ml", "mr", "ms", "nb", "nl", "pl", "pt", "pt-BR",
-  "ro", "ru", "sk", "sl", "sr", "sv", "ta", "te", "th", "tr", "uk", "ur",
-  "vi", "zh", "zh-TW",
-]);
+import { isValidBCP47, normalizeBCP47, getLanguageName } from "../../lib/language.js";
 
 interface LangStepProps {
   onNext: (languages: string[]) => void;
@@ -29,14 +22,24 @@ export function LangStep({ onNext }: LangStepProps) {
       return;
     }
 
-    const unknown = languages.filter((l) => !KNOWN_LANGUAGE_CODES.has(l));
-    if (unknown.length > 0 && !warning) {
-      setWarning(`Unrecognized language code(s): ${unknown.join(", ")}. Press Enter again to continue anyway.`);
+    const invalid = languages.filter((l) => !isValidBCP47(l));
+    if (invalid.length > 0) {
+      setError(`Invalid BCP 47 language code(s): ${invalid.join(", ")}`);
+      setWarning(null);
+      return;
+    }
+
+    const normalized = languages.map((l) => normalizeBCP47(l)!);
+
+    // Warn about codes that resolve to an unknown language name (likely typos)
+    const suspicious = normalized.filter((l) => getLanguageName(l) === l);
+    if (suspicious.length > 0 && !warning) {
+      setWarning(`Unrecognized language(s): ${suspicious.join(", ")}. Press Enter again to continue anyway.`);
       setError(null);
       return;
     }
 
-    onNext(languages);
+    onNext(normalized);
   };
 
   return (

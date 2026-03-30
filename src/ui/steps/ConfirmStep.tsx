@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { Badge, ConfirmInput } from "@inkjs/ui";
 import { Divider } from "../components/Divider.js";
+import { getLanguageName } from "../../lib/language.js";
 
 interface ConfirmStepProps {
   inputDir: string;
@@ -10,7 +11,7 @@ interface ConfirmStepProps {
   files: string[];
   model: string;
   onConfirm: () => void;
-  onCancel: () => void;
+  onBack: () => void;
 }
 
 export function ConfirmStep({
@@ -20,7 +21,7 @@ export function ConfirmStep({
   files,
   model,
   onConfirm,
-  onCancel,
+  onBack,
 }: ConfirmStepProps) {
   const totalJobs = files.length * languages.length;
 
@@ -46,10 +47,13 @@ export function ConfirmStep({
           <Text>{outputDir}</Text>
           <Text dimColor>({languages.map((l) => `${l}/`).join(", ")} created automatically)</Text>
         </Box>
-        <Box gap={1}>
+        <Box gap={1} flexWrap="wrap">
           <Text bold>Languages:</Text>
           {languages.map((lang) => (
-            <Badge key={lang} color="cyan">{lang}</Badge>
+            <Box key={lang} gap={0}>
+              <Badge color="cyan">{lang}</Badge>
+              <Text dimColor> ({getLanguageName(lang)})</Text>
+            </Box>
           ))}
         </Box>
         <Box gap={1}>
@@ -64,7 +68,8 @@ export function ConfirmStep({
 
       <Box marginTop={1} gap={1}>
         <Text bold>Start translation?</Text>
-        <ConfirmInput onConfirm={onConfirm} onCancel={onCancel} />
+        <ConfirmInput onConfirm={onConfirm} onCancel={onBack} />
+        <Text dimColor>(n to go back)</Text>
       </Box>
     </Box>
   );
