@@ -3,9 +3,14 @@ import { Box, Text, useStdout } from "ink";
 import { Spinner, ProgressBar, Badge } from "@inkjs/ui";
 import { Divider } from "../components/Divider.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { readFile, mkdir, writeFile } from "fs/promises";
+import { readFile, mkdir, writeFile, access } from "fs/promises";
 import { join, resolve } from "path";
 import { translateJsonStream } from "../../lib/translate.js";
+import {
+  findMissingKeys,
+  extractSubset,
+  mergeTranslations,
+} from "../../lib/diff.js";
 import logger from "../../lib/logger.js";
 
 type JobStatus = "pending" | "running" | "done" | "failed";
@@ -160,25 +165,62 @@ export function TranslationView({
         const raw = await readFile(sourcePath, "utf-8");
         const source = JSON.parse(raw);
 
-        const translated = await translateJsonStream(
-          model,
-          source,
-          lang,
-          (chunk: string) => {
-            setActiveStreamJob((current) => {
-              if (current === jobKey) {
-                setStreamText((prev) => prev + chunk);
+        // Check for existing translation
+        const existingPath = join(resolve(outputDir), lang, file);
+        let existing: Record<string, unknown> | null = null;
+        try {
+          await access(existingPath);
+          const existingRaw = await readFile(existingPath, "utf-8");
+          existing = JSON.parse(existingRaw);
+        } catch {
+          // File doesn't exist — full translation needed
+        }
+
+        let finalResult: Record<string, unknown>;
+
+        if (existing) {
+          const missingKeys = findMissingKeys(source, existing);
+          if (missingKeys.size === 0) {
+            // Reorder and drop stale keys
+            finalResult = mergeTranslations(source, existing, {});
+          } else {
+            const subset = extractSubset(source, missingKeys);
+            const newTranslations = await translateJsonStream(
+              model,
+              subset,
+              lang,
+              (chunk: string) => {
+                setActiveStreamJob((current) => {
+                  if (current === jobKey) {
+                    setStreamText((prev) => prev + chunk);
+                  }
+                  return current;
+                });
               }
-              return current;
-            });
+            );
+            finalResult = mergeTranslations(source, existing, newTranslations);
           }
-        );
+        } else {
+          finalResult = await translateJsonStream(
+            model,
+            source,
+            lang,
+            (chunk: string) => {
+              setActiveStreamJob((current) => {
+                if (current === jobKey) {
+                  setStreamText((prev) => prev + chunk);
+                }
+                return current;
+              });
+            }
+          );
+        }
 
         const langDir = join(resolve(outputDir), lang);
         await mkdir(langDir, { recursive: true });
         await writeFile(
           join(langDir, file),
-          JSON.stringify(translated, null, 2) + "\n",
+          JSON.stringify(finalResult, null, 2) + "\n",
           "utf-8"
         );
 
