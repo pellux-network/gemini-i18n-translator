@@ -4,7 +4,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { readdir, readFile, mkdir, writeFile, access } from "fs/promises";
 import { join, resolve } from "path";
 import { translateJson } from "./lib/translate";
-import { findMissingKeys, findStaleKeys, extractSubset, mergeTranslations } from "./lib/diff";
+import { resolveIncremental } from "./lib/diff";
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
@@ -93,40 +93,16 @@ async function processJob(job: { file: string; lang: string }): Promise<void> {
       // File doesn't exist — full translation needed
     }
 
-    let translated: Record<string, unknown>;
+    const { result: translated, skippedTranslation, staleKeys } = await resolveIncremental(
+      source,
+      existing,
+      (subset) => translateJson(model, subset, lang)
+    );
 
-    if (existing) {
-      const staleKeys = findStaleKeys(source, existing);
-      if (staleKeys.size > 0) {
-        console.warn(
-          `  [warning] ${label}: dropping ${staleKeys.size} stale key(s): ${[...staleKeys].join(", ")}`
-        );
-      }
-
-      const missingKeys = findMissingKeys(source, existing);
-      if (missingKeys.size === 0) {
-        const reordered = mergeTranslations(source, existing, {});
-        const langDir = join(outputDir, lang);
-        await mkdir(langDir, { recursive: true });
-        await writeFile(
-          join(langDir, file),
-          JSON.stringify(reordered, null, 2) + "\n",
-          "utf-8"
-        );
-        completed++;
-        if (staleKeys.size > 0) {
-          console.log(`  [${completed + failed}/${totalJobs}] ${label} ... updated (removed stale keys)`);
-        } else {
-          console.log(`  [${completed + failed}/${totalJobs}] ${label} ... already up to date`);
-        }
-        return;
-      }
-
-      const subset = extractSubset(source, missingKeys);
-      const newTranslations = await translateJson(model, subset, lang);
-      translated = mergeTranslations(source, existing, newTranslations);
-    } else {
-      translated = await translateJson(model, source, lang);
+    if (staleKeys.size > 0) {
+      console.warn(
+        `  [warning] ${label}: dropping ${staleKeys.size} stale key(s): ${[...staleKeys].join(", ")}`
+      );
     }
 
     const langDir = join(outputDir, lang);
@@ -138,7 +114,13 @@ async function processJob(job: { file: string; lang: string }): Promise<void> {
     );
 
     completed++;
-    console.log(`  [${completed + failed}/${totalJobs}] ${label} ... done`);
+    if (skippedTranslation && staleKeys.size > 0) {
+      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... updated (removed stale keys)`);
+    } else if (skippedTranslation) {
+      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... already up to date`);
+    } else {
+      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... done`);
+    }
   } catch (err) {
     failed++;
     const msg = err instanceof Error ? err.message : String(err);

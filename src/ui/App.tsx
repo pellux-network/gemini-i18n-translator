@@ -1,7 +1,5 @@
 import React, { useState } from "react";
 import { Box, useApp } from "ink";
-import { readFile } from "fs/promises";
-import { join, resolve } from "path";
 import { ConfigCheck } from "./steps/ConfigCheck.js";
 import { InputStep } from "./steps/InputStep.js";
 import { OutputStep } from "./steps/OutputStep.js";
@@ -10,7 +8,7 @@ import { ConfirmStep } from "./steps/ConfirmStep.js";
 import { StaleStep, type StaleKeyInfo } from "./steps/StaleStep.js";
 import { TranslationView, type Job, type TranslationResult } from "./views/TranslationView.js";
 import { DoneView } from "./views/DoneView.js";
-import { findStaleKeys } from "../lib/diff.js";
+import { scanForStaleKeys } from "../lib/diff.js";
 import logger from "../lib/logger.js";
 
 export type AppStep =
@@ -65,35 +63,6 @@ export function App() {
       }
     }
     return list;
-  };
-
-  const scanForStaleKeys = async (
-    files: string[],
-    languages: string[],
-    inputDir: string,
-    outputDir: string
-  ): Promise<StaleKeyInfo[]> => {
-    const staleList: StaleKeyInfo[] = [];
-    for (const file of files) {
-      const sourcePath = join(resolve(inputDir), file);
-      const sourceRaw = await readFile(sourcePath, "utf-8");
-      const source = JSON.parse(sourceRaw);
-
-      for (const lang of languages) {
-        const existingPath = join(resolve(outputDir), lang, file);
-        try {
-          const existingRaw = await readFile(existingPath, "utf-8");
-          const existing = JSON.parse(existingRaw);
-          const stale = findStaleKeys(source, existing);
-          if (stale.size > 0) {
-            staleList.push({ file, lang, keys: [...stale] });
-          }
-        } catch {
-          // File doesn't exist — no stale keys
-        }
-      }
-    }
-    return staleList;
   };
 
   return (
@@ -173,7 +142,7 @@ export function App() {
             );
             setStep("translating");
           }}
-          onBack={() => setStep("lang")}
+          onBack={() => setStep("confirm")}
         />
       )}
       {step === "translating" && (

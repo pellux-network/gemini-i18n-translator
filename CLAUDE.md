@@ -28,14 +28,15 @@ No build step — Bun JIT compiles TypeScript directly. No linter configured.
 
 - **`src/lib/`** — Pure business logic, no UI dependencies. Fully testable.
   - `translate.ts` — `translateJson()` (CLI) and `translateJsonStream()` (TUI) with retry-on-validation-failure (max 1 retry)
-  - `validate.ts` — `parseAndValidate()` strips markdown fences, parses JSON, validates key structure via dotted-path comparison
+  - `validate.ts` — `parseAndValidate()`, `collectKeys()` — strips markdown fences, parses JSON, validates key structure via dotted-path comparison
   - `language.ts` — `normalizeBCP47()`, `getLanguageName()`, `isValidBCP47()` — BCP 47 validation/normalization via `Intl.Locale` and `Intl.DisplayNames`
   - `prompt.ts` — Builds system/user/retry prompts; uses `language.ts` for language name resolution
+  - `diff.ts` — `findMissingKeys()`, `findStaleKeys()`, `extractSubset()`, `mergeTranslations()`, `resolveIncremental()`, `scanForStaleKeys()` — incremental translation diff utilities
   - `logger.ts` — Pino structured logger writing to `~/.local/share/gemini-i18n-translator/logs/`
 
 - **`src/ui/`** — Ink (React for CLI) components. Step-based wizard state machine:
   ```
-  config → input → output → lang → confirm → translating → done
+  config → input → output → lang → confirm → [stale] → translating → done
   ```
   - `App.tsx` — Main state machine orchestrator
   - `steps/` — One component per wizard step

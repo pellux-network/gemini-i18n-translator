@@ -4,6 +4,7 @@ import {
   findStaleKeys,
   extractSubset,
   mergeTranslations,
+  resolveIncremental,
 } from "../../src/lib/diff";
 
 describe("findMissingKeys", () => {
@@ -142,5 +143,46 @@ describe("mergeTranslations", () => {
     const translated = { a: "Translated A", b: "Translated B" };
     const result = mergeTranslations(source, existing, translated);
     expect(result).toEqual({ a: "Translated A", b: "Translated B" });
+  });
+
+  test("falls back to source value when key missing from both translated and existing", () => {
+    const source = { greeting: "Hello", missing: "Fallback" };
+    const existing = {};
+    const translated = { greeting: "Bonjour" };
+    const result = mergeTranslations(source, existing, translated);
+    expect(result).toEqual({ greeting: "Bonjour", missing: "Fallback" });
+  });
+});
+
+describe("resolveIncremental", () => {
+  test("does full translation when no existing file", async () => {
+    const source = { a: "A", b: "B" };
+    const translated = { a: "X", b: "Y" };
+    const result = await resolveIncremental(source, null, async () => translated);
+    expect(result.result).toEqual(translated);
+    expect(result.skippedTranslation).toBe(false);
+    expect(result.staleKeys.size).toBe(0);
+  });
+
+  test("skips translation when no missing keys", async () => {
+    const source = { a: "A" };
+    const existing = { a: "X", stale: "Gone" };
+    const translate = async () => { throw new Error("should not be called"); };
+    const result = await resolveIncremental(source, existing, translate);
+    expect(result.result).toEqual({ a: "X" });
+    expect(result.skippedTranslation).toBe(true);
+    expect(result.staleKeys).toEqual(new Set(["stale"]));
+  });
+
+  test("translates only missing keys and merges", async () => {
+    const source = { a: "A", b: "B" };
+    const existing = { a: "X" };
+    const result = await resolveIncremental(source, existing, async (subset) => {
+      expect(subset).toEqual({ b: "B" });
+      return { b: "Y" };
+    });
+    expect(result.result).toEqual({ a: "X", b: "Y" });
+    expect(result.skippedTranslation).toBe(false);
+    expect(result.missingKeys).toEqual(new Set(["b"]));
   });
 });

@@ -2,12 +2,9 @@ import React from "react";
 import { Box, Text } from "ink";
 import { ConfirmInput } from "@inkjs/ui";
 import { Divider } from "../components/Divider.js";
+import type { StaleKeyInfo } from "../../lib/diff.js";
 
-export interface StaleKeyInfo {
-  file: string;
-  lang: string;
-  keys: string[];
-}
+export type { StaleKeyInfo };
 
 interface StaleStepProps {
   staleKeys: StaleKeyInfo[];

@@ -6,11 +6,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { readFile, mkdir, writeFile, access } from "fs/promises";
 import { join, resolve } from "path";
 import { translateJsonStream } from "../../lib/translate.js";
-import {
-  findMissingKeys,
-  extractSubset,
-  mergeTranslations,
-} from "../../lib/diff.js";
+import { resolveIncremental } from "../../lib/diff.js";
 import logger from "../../lib/logger.js";
 
 type JobStatus = "pending" | "running" | "done" | "failed";
@@ -176,34 +172,12 @@ export function TranslationView({
           // File doesn't exist — full translation needed
         }
 
-        let finalResult: Record<string, unknown>;
-
-        if (existing) {
-          const missingKeys = findMissingKeys(source, existing);
-          if (missingKeys.size === 0) {
-            // Reorder and drop stale keys
-            finalResult = mergeTranslations(source, existing, {});
-          } else {
-            const subset = extractSubset(source, missingKeys);
-            const newTranslations = await translateJsonStream(
-              model,
-              subset,
-              lang,
-              (chunk: string) => {
-                setActiveStreamJob((current) => {
-                  if (current === jobKey) {
-                    setStreamText((prev) => prev + chunk);
-                  }
-                  return current;
-                });
-              }
-            );
-            finalResult = mergeTranslations(source, existing, newTranslations);
-          }
-        } else {
-          finalResult = await translateJsonStream(
+        const { result: finalResult, staleKeys } = await resolveIncremental(
+          source,
+          existing,
+          (subset) => translateJsonStream(
             model,
-            source,
+            subset,
             lang,
             (chunk: string) => {
               setActiveStreamJob((current) => {
@@ -213,7 +187,11 @@ export function TranslationView({
                 return current;
               });
             }
-          );
+          )
+        );
+
+        if (staleKeys.size > 0) {
+          logger.warn({ file, lang, staleCount: staleKeys.size, keys: [...staleKeys] }, `Dropping ${staleKeys.size} stale key(s)`);
         }
 
         const langDir = join(resolve(outputDir), lang);
