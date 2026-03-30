@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 import { parseArgs } from "util";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { readdir, readFile, mkdir, writeFile } from "fs/promises";
+import { readdir, readFile, mkdir, writeFile, access } from "fs/promises";
 import { join, resolve } from "path";
 import { translateJson } from "./lib/translate";
+import { resolveIncremental } from "./lib/diff";
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
@@ -82,7 +83,27 @@ async function processJob(job: { file: string; lang: string }): Promise<void> {
     const raw = await readFile(sourcePath, "utf-8");
     const source = JSON.parse(raw);
 
-    const translated = await translateJson(model, source, lang);
+    const existingPath = join(outputDir, lang, file);
+    let existing: Record<string, unknown> | null = null;
+    try {
+      await access(existingPath);
+      const existingRaw = await readFile(existingPath, "utf-8");
+      existing = JSON.parse(existingRaw);
+    } catch {
+      // File doesn't exist — full translation needed
+    }
+
+    const { result: translated, skippedTranslation, staleKeys } = await resolveIncremental(
+      source,
+      existing,
+      (subset) => translateJson(model, subset, lang)
+    );
+
+    if (staleKeys.size > 0) {
+      console.warn(
+        `  [warning] ${label}: dropping ${staleKeys.size} stale key(s): ${[...staleKeys].join(", ")}`
+      );
+    }
 
     const langDir = join(outputDir, lang);
     await mkdir(langDir, { recursive: true });
@@ -93,7 +114,13 @@ async function processJob(job: { file: string; lang: string }): Promise<void> {
     );
 
     completed++;
-    console.log(`  [${completed + failed}/${totalJobs}] ${label} ... done`);
+    if (skippedTranslation && staleKeys.size > 0) {
+      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... updated (removed stale keys)`);
+    } else if (skippedTranslation) {
+      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... already up to date`);
+    } else {
+      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... done`);
+    }
   } catch (err) {
     failed++;
     const msg = err instanceof Error ? err.message : String(err);

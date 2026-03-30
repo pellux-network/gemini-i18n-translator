@@ -14,7 +14,7 @@ function stripCodeFences(raw: string): string {
   return trimmed;
 }
 
-function collectKeys(obj: JsonObject, prefix = ""): Set<string> {
+export function collectKeys(obj: JsonObject, prefix = ""): Set<string> {
   const keys = new Set<string>();
   for (const key of Object.keys(obj)) {
     const fullKey = prefix ? `${prefix}.${key}` : key;
