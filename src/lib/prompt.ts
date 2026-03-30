@@ -1,4 +1,4 @@
-import { getLanguageName } from "./language";
+import { getLanguageName } from "./language.js";
 
 export function buildSystemPrompt(targetLang: string): string {
   const langName = getLanguageName(targetLang);

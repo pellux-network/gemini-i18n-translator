@@ -111,7 +111,7 @@ export function App() {
             setJobs(newJobs);
             setStep("translating");
           }}
-          onBack={() => setStep("input")}
+          onBack={() => setStep("lang")}
         />
       )}
       {step === "translating" && (
