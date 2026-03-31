@@ -141,13 +141,24 @@ export async function resolveIncremental(
   return { result, skippedTranslation: false, staleKeys, missingKeys };
 }
 
-export async function scanForStaleKeys(
+export interface JobScanResult {
+  staleKeys: StaleKeyInfo[];
+  newJobs: number;
+  updateJobs: number;
+  upToDateJobs: number;
+}
+
+export async function scanJobs(
   files: string[],
   languages: string[],
   inputDir: string,
   outputDir: string
-): Promise<StaleKeyInfo[]> {
-  const staleList: StaleKeyInfo[] = [];
+): Promise<JobScanResult> {
+  const staleKeys: StaleKeyInfo[] = [];
+  let newJobs = 0;
+  let updateJobs = 0;
+  let upToDateJobs = 0;
+
   for (const file of files) {
     const sourcePath = join(resolve(inputDir), file);
     let source: JsonObject;
@@ -155,7 +166,8 @@ export async function scanForStaleKeys(
       const sourceRaw = await readFile(sourcePath, "utf-8");
       source = JSON.parse(sourceRaw);
     } catch (err) {
-      logger.warn({ file, error: String(err) }, "Failed to read source file for stale key scan, skipping");
+      logger.warn({ file, error: String(err) }, "Failed to read source file for scan, skipping");
+      newJobs += languages.length;
       continue;
     }
 
@@ -164,14 +176,23 @@ export async function scanForStaleKeys(
       try {
         const existingRaw = await readFile(existingPath, "utf-8");
         const existing = JSON.parse(existingRaw);
+
         const stale = findStaleKeys(source, existing);
         if (stale.size > 0) {
-          staleList.push({ file, lang, keys: [...stale] });
+          staleKeys.push({ file, lang, keys: [...stale] });
+        }
+
+        const missing = findMissingKeys(source, existing);
+        if (missing.size > 0) {
+          updateJobs++;
+        } else {
+          upToDateJobs++;
         }
       } catch {
-        // File doesn't exist — no stale keys
+        newJobs++;
       }
     }
   }
-  return staleList;
+
+  return { staleKeys, newJobs, updateJobs, upToDateJobs };
 }

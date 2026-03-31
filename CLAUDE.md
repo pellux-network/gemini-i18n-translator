@@ -31,7 +31,7 @@ No build step — Bun JIT compiles TypeScript directly. No linter configured.
   - `validate.ts` — `parseAndValidate()`, `collectKeys()` — strips markdown fences, parses JSON, validates key structure via dotted-path comparison
   - `language.ts` — `normalizeBCP47()`, `getLanguageName()`, `isValidBCP47()` — BCP 47 validation/normalization via `Intl.Locale` and `Intl.DisplayNames`
   - `prompt.ts` — Builds system/user/retry prompts; uses `language.ts` for language name resolution
-  - `diff.ts` — `findMissingKeys()`, `findStaleKeys()`, `extractSubset()`, `mergeTranslations()`, `resolveIncremental()`, `scanForStaleKeys()` — incremental translation diff utilities
+  - `diff.ts` — `findMissingKeys()`, `findStaleKeys()`, `extractSubset()`, `mergeTranslations()`, `resolveIncremental()`, `scanJobs()` — incremental translation diff utilities
   - `logger.ts` — Pino structured logger writing to `~/.local/share/gemini-i18n-translator/logs/`
 
 - **`src/ui/`** — Ink (React for CLI) components. Step-based wizard state machine:

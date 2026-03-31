@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { Badge, ConfirmInput } from "@inkjs/ui";
 import { Divider } from "../components/Divider.js";
 import { getLanguageName } from "../../lib/language.js";
+import type { JobScanResult } from "../../lib/diff.js";
 
 interface ConfirmStepProps {
   inputDir: string;
@@ -10,6 +11,7 @@ interface ConfirmStepProps {
   languages: string[];
   files: string[];
   model: string;
+  scanResult: JobScanResult | null;
   onConfirm: () => void;
   onBack: () => void;
 }
@@ -20,6 +22,7 @@ export function ConfirmStep({
   languages,
   files,
   model,
+  scanResult,
   onConfirm,
   onBack,
 }: ConfirmStepProps) {
@@ -64,6 +67,13 @@ export function ConfirmStep({
           <Text bold>Total:</Text>
           <Text color="yellow">{totalJobs} translations</Text>
         </Box>
+        {scanResult && (scanResult.updateJobs > 0 || scanResult.upToDateJobs > 0) && (
+          <Box gap={1} paddingLeft={2}>
+            {scanResult.newJobs > 0 && <Badge color="yellow">{String(scanResult.newJobs)} new</Badge>}
+            {scanResult.updateJobs > 0 && <Badge color="green">{String(scanResult.updateJobs)} update</Badge>}
+            {scanResult.upToDateJobs > 0 && <Badge color="cyan">{String(scanResult.upToDateJobs)} up to date</Badge>}
+          </Box>
+        )}
       </Box>
 
       <Box marginTop={1} gap={1}>
