@@ -63,10 +63,11 @@ The TUI walks you through each step:
 1. **Config check** -- displays your API key (masked) and model
 2. **Source directory** -- path to your English JSON files (tab-completion supported)
 3. **Output directory** -- base path where language subdirectories are created
-4. **Target languages** -- comma-separated language codes (e.g. `fr,de,ja`)
-5. **Confirmation** -- review summary, press `Y` to start
-6. **Translation** -- live progress bar, per-file status grid, and streaming Gemini output
-7. **Results** -- success/failure summary with option to retry failed translations
+4. **Target languages** -- comma-separated language codes with BCP-47 validation (e.g. `fr,de,ja`)
+5. **Confirmation** -- review summary with job breakdown (new / incremental / up to date), press `Y` to start
+6. **Stale keys** -- if existing translations have keys no longer in source, lists them for confirmation before removal
+7. **Translation** -- live progress bar, per-file status grid with incremental indicators, and streaming Gemini output
+8. **Results** -- success/failure/up-to-date summary with option to retry failed translations
 
 ### Non-interactive CLI
 
@@ -84,7 +85,30 @@ Options:
 | `--output` | `-o` | Yes | -- | Base output directory |
 | `--lang` | `-l` | Yes | -- | Comma-separated target language codes |
 | `--model` | `-m` | No | `gemini-flash-lite-latest` | Gemini model to use |
+| `--no-scan` | | No | `false` | Skip pre-scan of existing translations |
+| `--no-retry` | | No | `false` | Disable automatic retry of failed jobs |
+| `--skip-validation` | | No | `false` | Skip BCP-47 language code validation |
 | `--help` | `-h` | No | -- | Show help |
+
+Example CI/CD usage:
+
+```bash
+# Full run with all features (pre-scan, retry, validation)
+bun run cli -- -i ./locales/en -o ./locales -l fr,de,ja
+
+# Fast mode: skip pre-scan, no retry
+bun run cli -- -i ./locales/en -o ./locales -l fr,de,ja --no-scan --no-retry
+```
+
+## Incremental translation
+
+When output files already exist, only new or missing keys are sent to Gemini. Existing translations are preserved and reused. This means:
+
+- **Adding new keys** to your source JSON only translates the new keys -- existing translations are untouched
+- **Removing keys** from source automatically drops them from all translations (with a confirmation step in TUI mode)
+- **Up-to-date files** are skipped entirely -- no API calls, just reordered to match source key order
+
+Both CLI and TUI show a breakdown before starting: how many jobs are new, incremental updates, or already up to date. The CLI pre-scan can be skipped with `--no-scan` for speed.
 
 ## Output structure
 
@@ -157,6 +181,8 @@ src/
   index.tsx              -- TUI entry point
   cli.ts                 -- non-interactive CLI entry point
   lib/                   -- core logic (no UI dependencies)
+    diff.ts              -- incremental translation diffing and merging
+    language.ts          -- BCP-47 validation and normalization
     logger.ts            -- pino logger with rolling file output
     prompt.ts            -- Gemini prompt construction
     translate.ts         -- translation with streaming and retry

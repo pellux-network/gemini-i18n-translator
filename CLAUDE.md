@@ -45,7 +45,15 @@ No build step — Bun JIT compiles TypeScript directly. No linter configured.
 
 ### Translation Pipeline
 
-Files × languages → job queue → parallel execution (concurrency 5 via Promise.race) → per-job: read source JSON → Gemini API call → validate key structure → write output. Validation failures trigger one retry with error context in prompt.
+Files × languages → job queue → parallel execution (concurrency 5 via Promise.race) → per-job: check for existing translation → if exists, diff keys → translate only missing keys → merge with existing → write output. Validation failures trigger one retry with error context in prompt.
+
+### Incremental Translation (Update Mode)
+
+Both CLI and TUI support incremental translation. When an output file already exists:
+1. `scanJobs()` pre-scans all jobs and classifies as new/update/up-to-date
+2. `resolveIncremental()` orchestrates per-job: detects missing keys, extracts subset, translates only new keys, merges result
+3. Stale keys (in existing but not in source) are detected and dropped
+4. Up-to-date files are reordered to match source structure without API calls
 
 ## Testing
 
