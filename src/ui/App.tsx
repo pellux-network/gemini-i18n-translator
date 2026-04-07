@@ -8,7 +8,7 @@ import { ConfirmStep } from "./steps/ConfirmStep.js";
 import { StaleStep, type StaleKeyInfo } from "./steps/StaleStep.js";
 import { TranslationView, type Job, type TranslationResult } from "./views/TranslationView.js";
 import { DoneView } from "./views/DoneView.js";
-import { scanForStaleKeys } from "../lib/diff.js";
+import { scanJobs, type JobScanResult } from "../lib/diff.js";
 import logger from "../lib/logger.js";
 
 export type AppStep =
@@ -35,6 +35,7 @@ export function App() {
   const [step, setStep] = useState<AppStep>("config");
   const [results, setResults] = useState<TranslationResult>({
     completed: 0,
+    skipped: 0,
     failed: 0,
     failedJobs: [],
   });
@@ -42,6 +43,7 @@ export function App() {
   // Increment to force remount of TranslationView on retry
   const [runKey, setRunKey] = useState(0);
   const [staleKeys, setStaleKeys] = useState<StaleKeyInfo[]>([]);
+  const [scanResult, setScanResult] = useState<JobScanResult | null>(null);
   const [state, setState] = useState<AppState>({
     apiKey: process.env.GEMINI_API_KEY ?? "",
     model: process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest",
@@ -95,9 +97,17 @@ export function App() {
       )}
       {step === "lang" && (
         <LangStep
-          onNext={(languages) => {
+          onNext={async (languages) => {
             logger.info({ languages }, "Target languages selected");
             updateState({ languages });
+
+            const scan = await scanJobs(
+              state.files,
+              languages,
+              state.inputDir,
+              state.outputDir
+            );
+            setScanResult(scan);
             setStep("confirm");
           }}
         />
@@ -109,20 +119,14 @@ export function App() {
           languages={state.languages}
           files={state.files}
           model={state.model}
-          onConfirm={async () => {
+          scanResult={scanResult}
+          onConfirm={() => {
             const newJobs = buildJobs(state.files, state.languages);
             logger.info({ totalJobs: newJobs.length }, "Translation confirmed");
             setJobs(newJobs);
 
-            const stale = await scanForStaleKeys(
-              state.files,
-              state.languages,
-              state.inputDir,
-              state.outputDir
-            );
-
-            if (stale.length > 0) {
-              setStaleKeys(stale);
+            if (scanResult && scanResult.staleKeys.length > 0) {
+              setStaleKeys(scanResult.staleKeys);
               setStep("stale");
             } else {
               logger.info("No stale keys found, starting translation");
@@ -163,6 +167,7 @@ export function App() {
       {step === "done" && (
         <DoneView
           completed={results.completed}
+          skipped={results.skipped}
           failed={results.failed}
           failedJobs={results.failedJobs}
           onRetry={(retryJobs) => {

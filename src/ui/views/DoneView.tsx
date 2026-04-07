@@ -6,14 +6,15 @@ import type { Job } from "./TranslationView.js";
 
 interface DoneViewProps {
   completed: number;
+  skipped: number;
   failed: number;
   failedJobs: Job[];
   onRetry: (jobs: Job[]) => void;
 }
 
-export function DoneView({ completed, failed, failedJobs, onRetry }: DoneViewProps) {
+export function DoneView({ completed, skipped, failed, failedJobs, onRetry }: DoneViewProps) {
   const { exit } = useApp();
-  const total = completed + failed;
+  const total = completed + skipped + failed;
   const allPassed = failed === 0;
 
   useEffect(() => {
@@ -34,7 +35,8 @@ export function DoneView({ completed, failed, failedJobs, onRetry }: DoneViewPro
       </StatusMessage>
 
       <Box gap={1} marginTop={1}>
-        <Badge color="green">{String(completed)} passed</Badge>
+        <Badge color="green">{String(completed)} translated</Badge>
+        {skipped > 0 && <Badge color="cyan">{String(skipped)} up to date</Badge>}
         {failed > 0 && <Badge color="red">{String(failed)} failed</Badge>}
       </Box>
 

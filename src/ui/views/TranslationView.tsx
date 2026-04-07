@@ -9,17 +9,19 @@ import { translateJsonStream } from "../../lib/translate.js";
 import { resolveIncremental } from "../../lib/diff.js";
 import logger from "../../lib/logger.js";
 
-type JobStatus = "pending" | "running" | "done" | "failed";
+type JobStatus = "pending" | "running" | "done" | "skipped" | "failed";
 
 export interface Job {
   file: string;
   lang: string;
   status: JobStatus;
   error?: string;
+  detail?: string;
 }
 
 export interface TranslationResult {
   completed: number;
+  skipped: number;
   failed: number;
   failedJobs: Job[];
 }
@@ -37,6 +39,7 @@ const STATUS_ICONS: Record<JobStatus, string> = {
   pending: "○",
   running: "◉",
   done: "✓",
+  skipped: "≡",
   failed: "✗",
 };
 
@@ -44,6 +47,7 @@ const STATUS_COLORS: Record<JobStatus, string | undefined> = {
   pending: undefined,
   running: "yellow",
   done: "green",
+  skipped: "cyan",
   failed: "red",
 };
 
@@ -87,9 +91,14 @@ function JobGrid({ jobs }: { jobs: Job[] }) {
                     <Text color={color}>{label}</Text>
                   </Box>
                 ) : (
-                  <Text dimColor={dimmed} color={color}>
-                    {icon} {label}
-                  </Text>
+                  <Box gap={1}>
+                    <Text dimColor={dimmed} color={color}>
+                      {icon} {label}
+                    </Text>
+                    {job.detail && (
+                      <Text dimColor color={color}>({job.detail})</Text>
+                    )}
+                  </Box>
                 )}
               </Box>
             );
@@ -116,8 +125,10 @@ export function TranslationView({
 
   const totalJobs = jobs.length;
   const completed = jobs.filter((j) => j.status === "done").length;
+  const skipped = jobs.filter((j) => j.status === "skipped").length;
   const failed = jobs.filter((j) => j.status === "failed").length;
-  const progress = totalJobs > 0 ? Math.round(((completed + failed) / totalJobs) * 100) : 0;
+  const finished = completed + skipped + failed;
+  const progress = totalJobs > 0 ? Math.round((finished / totalJobs) * 100) : 0;
 
   const updateJob = useCallback(
     (file: string, lang: string, update: Partial<Job>) => {
@@ -172,7 +183,7 @@ export function TranslationView({
           // File doesn't exist — full translation needed
         }
 
-        const { result: finalResult, staleKeys } = await resolveIncremental(
+        const { result: finalResult, skippedTranslation, staleKeys, missingKeys } = await resolveIncremental(
           source,
           existing,
           (subset) => translateJsonStream(
@@ -202,8 +213,19 @@ export function TranslationView({
           "utf-8"
         );
 
-        updateJob(file, lang, { status: "done" });
-        logger.info({ file, lang }, `Completed: ${label}`);
+        if (skippedTranslation && staleKeys.size > 0) {
+          updateJob(file, lang, { status: "skipped", detail: "removed stale keys" });
+          logger.info({ file, lang }, `Up to date (removed stale): ${label}`);
+        } else if (skippedTranslation) {
+          updateJob(file, lang, { status: "skipped", detail: "up to date" });
+          logger.info({ file, lang }, `Skipped (up to date): ${label}`);
+        } else if (existing && missingKeys.size > 0) {
+          updateJob(file, lang, { status: "done", detail: `${missingKeys.size} new` });
+          logger.info({ file, lang, newKeys: missingKeys.size }, `Updated: ${label}`);
+        } else {
+          updateJob(file, lang, { status: "done" });
+          logger.info({ file, lang }, `Completed: ${label}`);
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         updateJob(file, lang, { status: "failed", error: msg });
@@ -244,9 +266,10 @@ export function TranslationView({
         setTimeout(() => {
           setJobs((current) => {
             const c = current.filter((j) => j.status === "done").length;
+            const s = current.filter((j) => j.status === "skipped").length;
             const f = current.filter((j) => j.status === "failed").length;
             const failedJobs = current.filter((j) => j.status === "failed");
-            onDone({ completed: c, failed: f, failedJobs });
+            onDone({ completed: c, skipped: s, failed: f, failedJobs });
             return current;
           });
         }, 500);
@@ -268,8 +291,9 @@ export function TranslationView({
         <Box gap={1}>
           <Text bold>Progress:</Text>
           <Text>
-            {completed + failed}/{totalJobs}
+            {finished}/{totalJobs}
           </Text>
+          {skipped > 0 && <Text color="cyan">({skipped} up to date)</Text>}
           {failed > 0 && <Text color="red">({failed} failed)</Text>}
         </Box>
         <Box width={60}>

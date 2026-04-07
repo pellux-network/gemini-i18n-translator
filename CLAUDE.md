@@ -22,7 +22,7 @@ No build step — Bun JIT compiles TypeScript directly. No linter configured.
 ### Dual Entry Points
 
 - **`src/index.tsx`** — TUI entry. Renders React App via Ink, patches console to prevent terminal corruption.
-- **`src/cli.ts`** — CLI entry. Uses `parseArgs`, direct file I/O, no UI dependencies.
+- **`src/cli.ts`** — CLI entry. Uses `parseArgs`, direct file I/O, no UI dependencies. Flags: `--no-scan`, `--no-retry`, `--skip-validation`.
 
 ### Layer Separation
 
@@ -31,7 +31,7 @@ No build step — Bun JIT compiles TypeScript directly. No linter configured.
   - `validate.ts` — `parseAndValidate()`, `collectKeys()` — strips markdown fences, parses JSON, validates key structure via dotted-path comparison
   - `language.ts` — `normalizeBCP47()`, `getLanguageName()`, `isValidBCP47()` — BCP 47 validation/normalization via `Intl.Locale` and `Intl.DisplayNames`
   - `prompt.ts` — Builds system/user/retry prompts; uses `language.ts` for language name resolution
-  - `diff.ts` — `findMissingKeys()`, `findStaleKeys()`, `extractSubset()`, `mergeTranslations()`, `resolveIncremental()`, `scanForStaleKeys()` — incremental translation diff utilities
+  - `diff.ts` — `findMissingKeys()`, `findStaleKeys()`, `extractSubset()`, `mergeTranslations()`, `resolveIncremental()`, `scanJobs()` — incremental translation diff utilities
   - `logger.ts` — Pino structured logger writing to `~/.local/share/gemini-i18n-translator/logs/`
 
 - **`src/ui/`** — Ink (React for CLI) components. Step-based wizard state machine:
@@ -45,7 +45,15 @@ No build step — Bun JIT compiles TypeScript directly. No linter configured.
 
 ### Translation Pipeline
 
-Files × languages → job queue → parallel execution (concurrency 5 via Promise.race) → per-job: read source JSON → Gemini API call → validate key structure → write output. Validation failures trigger one retry with error context in prompt.
+Files × languages → job queue → parallel execution (concurrency 5 via Promise.race) → per-job: check for existing translation → if exists, diff keys → translate only missing keys → merge with existing → write output. Validation failures trigger one retry with error context in prompt.
+
+### Incremental Translation (Update Mode)
+
+Both CLI and TUI support incremental translation. When an output file already exists:
+1. `scanJobs()` pre-scans all jobs and classifies as new/update/up-to-date
+2. `resolveIncremental()` orchestrates per-job: detects missing keys, extracts subset, translates only new keys, merges result
+3. Stale keys (in existing but not in source) are detected and dropped
+4. Up-to-date files are reordered to match source structure without API calls
 
 ## Testing
 
