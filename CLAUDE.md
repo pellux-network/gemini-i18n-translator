@@ -22,7 +22,7 @@ No build step — Bun JIT compiles TypeScript directly. No linter configured.
 ### Dual Entry Points
 
 - **`src/index.tsx`** — TUI entry. Renders React App via Ink, patches console to prevent terminal corruption.
-- **`src/cli.ts`** — CLI entry. Uses `parseArgs`, direct file I/O, no UI dependencies.
+- **`src/cli.ts`** — CLI entry. Uses `parseArgs`, direct file I/O, no UI dependencies. Flags: `--no-scan`, `--no-retry`, `--skip-validation`.
 
 ### Layer Separation
 

@@ -4,7 +4,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { readdir, readFile, mkdir, writeFile, access } from "fs/promises";
 import { join, resolve } from "path";
 import { translateJson } from "./lib/translate";
-import { resolveIncremental } from "./lib/diff";
+import { resolveIncremental, scanJobs } from "./lib/diff";
+import { isValidBCP47, normalizeBCP47, getLanguageName } from "./lib/language";
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
@@ -13,6 +14,9 @@ const { values } = parseArgs({
     output: { type: "string", short: "o" },
     lang: { type: "string", short: "l" },
     model: { type: "string", short: "m", default: "gemini-flash-lite-latest" },
+    "no-scan": { type: "boolean", default: false },
+    "no-retry": { type: "boolean", default: false },
+    "skip-validation": { type: "boolean", default: false },
     help: { type: "boolean", short: "h" },
   },
   strict: true,
@@ -24,11 +28,14 @@ if (values.help) {
 Translate i18n JSON files using Google Gemini (non-interactive mode)
 
 Options:
-  -i, --input <path>   Path to English source directory
-  -o, --output <path>  Base output directory
-  -l, --lang <codes>   Comma-separated target language codes
-  -m, --model <name>   Gemini model (default: gemini-flash-lite-latest)
-  -h, --help           Show this help`);
+  -i, --input <path>       Path to English source directory
+  -o, --output <path>      Base output directory
+  -l, --lang <codes>       Comma-separated target language codes
+  -m, --model <name>       Gemini model (default: gemini-flash-lite-latest)
+      --no-scan            Skip pre-scan of existing translations
+      --no-retry           Disable automatic retry of failed jobs
+      --skip-validation    Skip BCP-47 language code validation
+  -h, --help               Show this help`);
   process.exit(0);
 }
 
@@ -45,8 +52,26 @@ if (!apiKey) {
 
 const inputDir = resolve(values.input);
 const outputDir = resolve(values.output);
-const languages = values.lang.split(",").map((l) => l.trim());
 const modelName = values.model!;
+
+// Feature 4: BCP-47 validation and normalization
+let languages = values.lang.split(",").map((l) => l.trim());
+
+if (!values["skip-validation"]) {
+  const validated: string[] = [];
+  for (const code of languages) {
+    if (!isValidBCP47(code)) {
+      console.error(`Error: Invalid language code "${code}". Use --skip-validation to bypass.`);
+      process.exit(1);
+    }
+    const normalized = normalizeBCP47(code)!;
+    if (normalized !== code) {
+      console.log(`  Normalized "${code}" → "${normalized}" (${getLanguageName(normalized)})`);
+    }
+    validated.push(normalized);
+  }
+  languages = validated;
+}
 
 const genAI = new GoogleGenerativeAI(apiKey);
 const model = genAI.getGenerativeModel({ model: modelName });
@@ -61,19 +86,39 @@ if (jsonFiles.length === 0) {
 
 const totalJobs = jsonFiles.length * languages.length;
 console.log(
-  `Translating ${jsonFiles.length} file(s) to ${languages.length} language(s) (${totalJobs} total)\n`
+  `Translating ${jsonFiles.length} file(s) to ${languages.length} language(s) (${totalJobs} total)`
 );
 
-const jobs: Array<{ file: string; lang: string }> = [];
+// Feature 1: Pre-scan summary
+if (!values["no-scan"]) {
+  const scan = await scanJobs(jsonFiles, languages, inputDir, outputDir);
+  const parts: string[] = [];
+  if (scan.newJobs > 0) parts.push(`${scan.newJobs} new`);
+  if (scan.updateJobs > 0) parts.push(`${scan.updateJobs} incremental`);
+  if (scan.upToDateJobs > 0) parts.push(`${scan.upToDateJobs} up to date`);
+  if (scan.staleKeys.length > 0) {
+    const staleCount = scan.staleKeys.reduce((s, k) => s + k.keys.length, 0);
+    parts.push(`${staleCount} stale key(s) to remove`);
+  }
+  if (parts.length > 0) {
+    console.log(`  Pre-scan: ${parts.join(", ")}`);
+  }
+}
+
+console.log();
+
+const allJobs: Array<{ file: string; lang: string }> = [];
 for (const file of jsonFiles) {
   for (const lang of languages) {
-    jobs.push({ file, lang });
+    allJobs.push({ file, lang });
   }
 }
 
 const CONCURRENCY = 5;
 let completed = 0;
+let skipped = 0;
 let failed = 0;
+let failedJobs: Array<{ file: string; lang: string }> = [];
 
 async function processJob(job: { file: string; lang: string }): Promise<void> {
   const { file, lang } = job;
@@ -93,7 +138,7 @@ async function processJob(job: { file: string; lang: string }): Promise<void> {
       // File doesn't exist — full translation needed
     }
 
-    const { result: translated, skippedTranslation, staleKeys } = await resolveIncremental(
+    const { result: translated, skippedTranslation, staleKeys, missingKeys } = await resolveIncremental(
       source,
       existing,
       (subset) => translateJson(model, subset, lang)
@@ -113,36 +158,64 @@ async function processJob(job: { file: string; lang: string }): Promise<void> {
       "utf-8"
     );
 
-    completed++;
+    // Feature 2 & 3: Distinct status messages with key counts
+    const counter = completed + skipped + failed + 1;
     if (skippedTranslation && staleKeys.size > 0) {
-      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... updated (removed stale keys)`);
+      skipped++;
+      console.log(`  [${counter}/${totalJobs}] ${label} ... updated (removed stale keys)`);
     } else if (skippedTranslation) {
-      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... already up to date`);
+      skipped++;
+      console.log(`  [${counter}/${totalJobs}] ${label} ... up to date`);
+    } else if (existing && missingKeys.size > 0) {
+      completed++;
+      console.log(`  [${counter}/${totalJobs}] ${label} ... done (${missingKeys.size} new keys)`);
     } else {
-      console.log(`  [${completed + failed}/${totalJobs}] ${label} ... done`);
+      completed++;
+      console.log(`  [${counter}/${totalJobs}] ${label} ... done`);
     }
   } catch (err) {
     failed++;
+    failedJobs.push(job);
     const msg = err instanceof Error ? err.message : String(err);
+    const counter = completed + skipped + failed;
     console.error(
-      `  [${completed + failed}/${totalJobs}] ${label} ... FAILED: ${msg}`
+      `  [${counter}/${totalJobs}] ${label} ... FAILED: ${msg}`
     );
   }
 }
 
-const executing = new Set<Promise<void>>();
-for (const job of jobs) {
-  const p = processJob(job).then(() => {
-    executing.delete(p);
-  });
-  executing.add(p);
-  if (executing.size >= CONCURRENCY) {
-    await Promise.race(executing);
+async function runJobs(jobs: Array<{ file: string; lang: string }>): Promise<void> {
+  const executing = new Set<Promise<void>>();
+  for (const job of jobs) {
+    const p = processJob(job).then(() => {
+      executing.delete(p);
+    });
+    executing.add(p);
+    if (executing.size >= CONCURRENCY) {
+      await Promise.race(executing);
+    }
   }
+  await Promise.all(executing);
 }
-await Promise.all(executing);
 
-console.log(`\nComplete: ${completed}/${totalJobs} succeeded, ${failed} failed`);
+await runJobs(allJobs);
+
+// Feature 5: Retry failed jobs once
+if (failedJobs.length > 0 && !values["no-retry"]) {
+  const retryList = [...failedJobs];
+  console.log(`\nRetrying ${retryList.length} failed job(s)...\n`);
+  failed = 0;
+  failedJobs = [];
+  await runJobs(retryList);
+}
+
+// Feature 2: Summary distinguishes translated vs up-to-date
+const parts: string[] = [];
+if (completed > 0) parts.push(`${completed} translated`);
+if (skipped > 0) parts.push(`${skipped} up to date`);
+if (failed > 0) parts.push(`${failed} failed`);
+console.log(`\nComplete: ${parts.join(", ")}`);
+
 if (failed > 0) {
   process.exit(1);
 }
